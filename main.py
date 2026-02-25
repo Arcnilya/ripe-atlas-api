@@ -9,9 +9,9 @@ import dns.message
 
 def read_file(fname):
     with open(fname, "r") as fp:
-        return fp.readline().strip()
+        return fp.read().splitlines()
 
-apikey = read_file("apikey")
+apikey = read_file("apikey")[0]
 URL = "https://atlas.ripe.net/api/v2/measurements"
 DB = "measurements.json"
 
@@ -33,24 +33,33 @@ def probe_value(args):
     return "WW"
 
 
+def payload(args, query):
+    return  {
+                "description": f"{args.description}: {query}",
+                "type": "dns",
+                "af": 4, # IPv4/6
+                "is_oneoff": True,
+                "query_class": args.qclass or "IN",
+                "query_type": args.rr,
+                "query_argument": query,
+                "include_qbuf": True,
+                "use_macros": True,
+                "use_probe_resolver": True # need "target" if False
+            }
+
+
 def create(args):
+    if os.path.exists(args.query):
+        queries = read_file(args.query)
+    else:
+        queries = (args.query).split(',')
+
     session = requests.Session()
     session.headers.update({
         "Authorization": f"Key {apikey}"
     })
     data = {
-        "definitions": [{
-            "description": args.description,
-            "type": "dns",
-            "af": 4, # IPv4/6
-            "is_oneoff": True,
-            "query_class": args.qclass or "IN",
-            "query_type": args.rr,
-            "query_argument": args.query,
-            "include_qbuf": True,
-            "use_macros": True,
-            "use_probe_resolver": True # need "target" if False
-        }],
+        "definitions": [payload(args, q) for q in queries],
         "probes": [{
             "requested": args.probes,
             "type": probe_type(args),
@@ -65,8 +74,6 @@ def create(args):
 
     if "measurements" not in response:
         exit(f"ERROR: {response}")
-    measurementID = str(response["measurements"][0])
-    print("Measurement", measurementID, "created")
 
     if not os.path.exists(DB):
         measurements = {}
@@ -74,7 +81,10 @@ def create(args):
         with open(DB) as fp:
             measurements = json.load(fp)
 
-    measurements.update({measurementID: data})
+    for measurementID in response["measurements"]:
+        print("Measurement", str(measurementID), "created") 
+        measurements.update({measurementID: data})
+
     with open(DB, "w") as fp:
         json.dump(measurements, fp)
 
@@ -111,10 +121,11 @@ def fetch(args):
                 else:
                     print("No result")
                 print("="*40)
-
-    with open(f"results/{args.measurement}.json", "w") as fp:
+    fname = f"{args.out}/{args.measurement}.json"
+    os.makedirs(os.path.dirname(fname), exist_ok=True)
+    with open(fname, "w") as fp:
         json.dump(measurement, fp)
-    print(f"Saved to results/{args.measurement}.json")
+    print("Saved to", fname)
 
 
 def main():
@@ -122,7 +133,8 @@ def main():
     parser.add_argument("-v", "--verbose", action="store_true")
     subparsers = parser.add_subparsers(dest='action', required=True, help='Subcommands')
 
-    parser_create = subparsers.add_parser('create', help='Create a measurement') 
+    parser_create = subparsers.add_parser('create', 
+        help='Create a measurement') 
     parser_create.add_argument("-d", "--description", required=True,
         help="Measurement description")
     parser_create.add_argument("--qclass",
@@ -142,9 +154,12 @@ def main():
 
     parser_status = subparsers.add_parser('status', help='Status of measurements') 
 
-    parser_fetch = subparsers.add_parser('fetch', help='Download result of measurement') 
+    parser_fetch = subparsers.add_parser('fetch', 
+        help='Download result of measurement') 
     parser_fetch.add_argument("-m", "--measurement", required=True,
         help="Measurement ID to download results")
+    parser_fetch.add_argument("-o", "--out", default="results",
+        help="Set measurement output directory")
 
     args = parser.parse_args()
 

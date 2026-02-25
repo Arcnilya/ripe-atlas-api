@@ -1,3 +1,11 @@
 apikey
 measurements.json
-results/*.json
+results
+!results/parse.py
+
+# Batch scripts
+create-batch.sh
+ddr-create-batch.sh
+europe-country-codes.lst
+fetch-batch.sh
+nordic-country-codes.lst
