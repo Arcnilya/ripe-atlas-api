@@ -29,6 +29,6 @@ python3 main.py fetch -m {measurementID}
 
 ## Todo
 - [x] python3 main.py fetch -o outdir
-- [ ] Include description in the outfile name
+- [x] Include description in the outfile name
 - [ ] python3 main.py parse (instead of parse.py)
 - [ ] python3 main.py fetch "search string"

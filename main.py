@@ -35,7 +35,7 @@ def probe_value(args):
 
 def payload(args, query):
     return  {
-                "description": f"{args.description}: {query}",
+                "description": f"{args.description}",
                 "type": "dns",
                 "af": 4, # IPv4/6
                 "is_oneoff": True,
@@ -107,13 +107,13 @@ def parse_buf(buf):
 
 def fetch(args):
     session = requests.Session()
-    measurement = session.get(
+    measurement_result = session.get(
         f"{URL}/{args.measurement}/results/?format=json", 
         headers={"Content-Type": "application/json"}
     ).json()
 
     if args.verbose:
-        for probe in measurement:
+        for probe in measurement_result:
             print(probe["prb_id"])
             for resolver in probe["resultset"]:
                 if "result" in resolver.keys():
@@ -121,7 +121,14 @@ def fetch(args):
                 else:
                     print("No result")
                 print("="*40)
-    fname = f"{args.out}/{args.measurement}.json"
+    
+    measurement_details = session.get(
+        f"{URL}/{args.measurement}", headers={"Content-Type": "application/json"}
+    ).json()
+
+    description = (measurement_details['description']).replace(" ", "_")
+    sanitized_description = "".join(c for c in description if c.isalnum() or c in ('.', '_')).rstrip()
+    fname = f"{args.out}/{sanitized_description}-{args.measurement}.json"
     os.makedirs(os.path.dirname(fname), exist_ok=True)
     with open(fname, "w") as fp:
         json.dump(measurement, fp)
