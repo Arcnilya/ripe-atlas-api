@@ -6,6 +6,8 @@ import base64
 import requests
 import argparse
 import dns.message
+import dns.edns
+import pandas as pd
 
 def read_file(fname):
     with open(fname, "r") as fp:
@@ -47,6 +49,10 @@ def payload(args, query):
                 "use_probe_resolver": True # need "target" if False
             }
 
+
+
+
+# ==== Main functions (create, status, fetch, parse) ===
 
 def create(args):
     if os.path.exists(args.query):
@@ -101,10 +107,6 @@ def status(args):
             print(measurementID, f"\"{measurement['description']}\"", f"({measurement['status']['name']})")
 
 
-def parse_buf(buf):
-    print(dns.message.from_wire(base64.b64decode(buf)))
-
-
 def fetch_aux(measurement_id, output_directory, verbose):
     session = requests.Session()
     measurement_result = session.get(
@@ -117,7 +119,7 @@ def fetch_aux(measurement_id, output_directory, verbose):
             print(probe["prb_id"])
             for resolver in probe["resultset"]:
                 if "result" in resolver.keys():
-                    parse_buf(resolver["result"]["abuf"])
+                    print(dns.message.from_wire(base64.b64decode(resolver["result"]["abuf"])))
                 else:
                     print("No result")
                 print("="*40)
@@ -150,8 +152,72 @@ def fetch(args):
             fetch_aux(measurement, args.out, args.verbose)
     else:
         print("Use -m or -s to fetch measurement(s)")
-    
 
+
+# ==== Help functions for parse() ====
+
+def read_json(fname):
+    with open(fname, "r") as fp:
+        content = fp.read().strip()
+
+        # Try to parse as a full JSON structure first
+        try:
+            data = json.loads(content)
+            if isinstance(data, list):
+                return data
+            else:
+                return [data]  # single JSON object
+        except json.JSONDecodeError:
+            # Fall back to line-by-line parsing
+            return [json.loads(line) for line in content.splitlines() if line.strip()]
+
+        return json.load(fp)
+
+
+def print_EDE(dnsmsg):
+    if dnsmsg.options:
+        for option in dnsmsg.options:
+            if option.otype == dns.edns.EDE:
+                print(f"EDE Code: {option.code}, Text: {option.text}")
+
+
+def parse(args):
+    measurement = read_json(args.input)
+    header = ["time","probeID","probeIP","resolverIP","query","rcode","answer","nscount"]
+    rows = []
+    for probe in measurement:
+        for query in probe["resultset"]:
+            entry = {}
+            entry["time"] = query["time"]
+            entry["probeID"] = probe["prb_id"]
+            entry["probeIP"] = probe["from"]
+            if "dst_addr" in query:
+                entry["resolverIP"] = query["dst_addr"]
+            if "result" in query:
+                try:
+                    dnsmsg = dns.message.from_wire(base64.b64decode(query["result"]["abuf"]))
+                    #print_EDE(dnsmsg)
+                    answer = str(dnsmsg).splitlines()
+                    for i in range(len(answer)):
+                        if answer[i] == ";QUESTION":
+                            if not answer[i+1].startswith(";"): # ;ANSWER
+                                entry["query"] = answer[i+1]
+                        if answer[i].startswith("rcode"):
+                            entry["rcode"] = answer[i].split()[-1]
+                        if answer[i] == ";ANSWER":
+                            if not answer[i+1].startswith(";"): # ;AUTHORITY
+                                entry["answer"] = answer[i+1]
+                    entry["nscount"] = query["result"]["NSCOUNT"]
+                except:
+                    entry["nscount"] = query["result"]["NSCOUNT"]
+            rows.append(entry)
+    df = pd.DataFrame(rows, columns=header)
+
+    if args.output:
+        separator = ";" if args.semi else ","
+        df.to_csv(args.output, index=False, header=args.header, sep=separator)
+    else:
+        print(df.to_string())
 
 
 def main():
@@ -189,6 +255,17 @@ def main():
     parser_fetch.add_argument("-o", "--out", default="results",
         help="Set measurement output directory")
 
+    parser_parse = subparsers.add_parser('parse',
+        help='Parse a measurement')
+    parser_parse.add_argument("--header", action="store_true", 
+        help="prints header (column names)")
+    parser_parse.add_argument("--semi", action="store_true", 
+        help="use semicolon as separator")
+    parser_parse.add_argument("-i", "--input", required=True, 
+        help="json file to read")
+    parser_parse.add_argument("-o", "--output", 
+        help="csv file to write")
+
     args = parser.parse_args()
 
     if args.action == "create":
@@ -197,6 +274,8 @@ def main():
         status(args)
     if args.action == "fetch":
         fetch(args)
+    if args.action == "parse":
+        parse(args)
 
 if __name__ == "__main__":
     main()

@@ -27,8 +27,18 @@ Download measurement results
 python3 main.py fetch -m {measurementID}
 ```
 
+Download multiple measurement results by keyword
+```bash
+python3 main.py fetch --search feb18
+```
+
+Parse measurement json to csv
+```bash
+python3 main.py parse -i {input_file}
+```
+
 ## Todo
 - [x] python3 main.py fetch -o outdir
 - [x] Include description in the outfile name
 - [x] python3 main.py fetch "search string"
-- [ ] python3 main.py parse (instead of parse.py)
+- [x] python3 main.py parse (instead of parse.py)

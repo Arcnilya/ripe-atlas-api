@@ -1,7 +1,6 @@
 apikey
 measurements.json
 results
-!results/parse.py
 
 # Batch scripts
 create-batch.sh
