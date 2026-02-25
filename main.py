@@ -105,14 +105,14 @@ def parse_buf(buf):
     print(dns.message.from_wire(base64.b64decode(buf)))
 
 
-def fetch(args):
+def fetch_aux(measurement_id, output_directory, verbose):
     session = requests.Session()
     measurement_result = session.get(
-        f"{URL}/{args.measurement}/results/?format=json", 
+        f"{URL}/{measurement_id}/results/?format=json", 
         headers={"Content-Type": "application/json"}
     ).json()
 
-    if args.verbose:
+    if verbose:
         for probe in measurement_result:
             print(probe["prb_id"])
             for resolver in probe["resultset"]:
@@ -123,16 +123,35 @@ def fetch(args):
                 print("="*40)
     
     measurement_details = session.get(
-        f"{URL}/{args.measurement}", headers={"Content-Type": "application/json"}
+        f"{URL}/{measurement_id}", headers={"Content-Type": "application/json"}
     ).json()
 
     description = (measurement_details['description']).replace(" ", "_")
     sanitized_description = "".join(c for c in description if c.isalnum() or c in ('.', '_')).rstrip()
-    fname = f"{args.out}/{sanitized_description}-{args.measurement}.json"
+    fname = f"{output_directory}/{sanitized_description}-{measurement_id}.json"
     os.makedirs(os.path.dirname(fname), exist_ok=True)
     with open(fname, "w") as fp:
-        json.dump(measurement, fp)
+        json.dump(measurement_result, fp)
     print("Saved to", fname)
+
+
+def fetch(args):
+    if args.measurement: # single fetch
+        fetch_aux(args.measurement, args.out, args.verbose)
+    elif args.search: # search through descriptions
+        measurements = set()
+        with open(DB) as fp: # use local DB
+            local_data = json.load(fp)
+            for measurementID in local_data.keys():
+                for definition in local_data[measurementID]["definitions"]:
+                    if args.search in definition["description"]:
+                        measurements.add(measurementID)
+        for measurement in measurements:
+            fetch_aux(measurement, args.out, args.verbose)
+    else:
+        print("Use -m or -s to fetch measurement(s)")
+    
+
 
 
 def main():
@@ -163,8 +182,10 @@ def main():
 
     parser_fetch = subparsers.add_parser('fetch', 
         help='Download result of measurement') 
-    parser_fetch.add_argument("-m", "--measurement", required=True,
+    parser_fetch.add_argument("-m", "--measurement",
         help="Measurement ID to download results")
+    parser_fetch.add_argument("-s", "--search",
+        help="Search in descriptions for measurement(s)")
     parser_fetch.add_argument("-o", "--out", default="results",
         help="Set measurement output directory")
 
