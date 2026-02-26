@@ -181,13 +181,14 @@ def print_EDE(dnsmsg):
                 print(f"EDE Code: {option.code}, Text: {option.text}")
 
 
-def parse(args):
-    measurement = read_json(args.input)
-    header = ["time","probeID","probeIP","resolverIP","query","rcode","answer","nscount"]
+def parse_aux(fname, args):
+    measurement = read_json(fname)
+    header = ["time","probeID","probeIP","resolverIP","query","rcode","answer","nscount","fname"]
     rows = []
     for probe in measurement:
         for query in probe["resultset"]:
             entry = {}
+            entry["fname"] = os.path.basename(fname)
             entry["time"] = query["time"]
             entry["probeID"] = probe["prb_id"]
             entry["probeIP"] = probe["from"]
@@ -197,6 +198,7 @@ def parse(args):
                 try:
                     dnsmsg = dns.message.from_wire(base64.b64decode(query["result"]["abuf"]))
                     #print_EDE(dnsmsg)
+                    entry["nscount"] = query["result"]["NSCOUNT"]
                     answer = str(dnsmsg).splitlines()
                     for i in range(len(answer)):
                         if answer[i] == ";QUESTION":
@@ -205,19 +207,37 @@ def parse(args):
                         if answer[i].startswith("rcode"):
                             entry["rcode"] = answer[i].split()[-1]
                         if answer[i] == ";ANSWER":
-                            if not answer[i+1].startswith(";"): # ;AUTHORITY
-                                entry["answer"] = answer[i+1]
-                    entry["nscount"] = query["result"]["NSCOUNT"]
+                            j = 1
+                            while not answer[i+j].startswith(";"): # ;AUTHORITY
+                                tmp = entry.copy()
+                                tmp["answer"] = answer[i+j]
+                                rows.append(tmp)
+                                j += 1
+                            if j == 1: # found no answers
+                                rows.append(entry)
                 except:
-                    entry["nscount"] = query["result"]["NSCOUNT"]
-            rows.append(entry)
+                    rows.append(entry)
     df = pd.DataFrame(rows, columns=header)
+    return df
 
+
+def parse(args):
+    out_dfs = []
+    if os.path.isfile(args.input):
+        out_dfs.append(parse_aux(args.input, args))
+    if os.path.isdir(args.input):
+        for f in os.listdir(os.fsencode(args.input)):
+            fname = os.fsdecode(f)
+            if fname.endswith(".json"):
+                out_dfs.append(parse_aux(os.path.join(args.input, fname), args))
+
+    df = pd.concat(out_dfs)
     if args.output:
         separator = ";" if args.semi else ","
         df.to_csv(args.output, index=False, header=args.header, sep=separator)
     else:
         print(df.to_string())
+
 
 
 def main():
