@@ -95,16 +95,26 @@ def create(args):
         json.dump(measurements, fp)
 
 
+def status_aux(measurementID):
+    session = requests.Session()
+    measurement = session.get(
+        f"{URL}/{measurementID}", headers={"Content-Type": "application/json"}
+    ).json()
+    print(measurementID, f"\"{measurement['description']}\"", f"({measurement['status']['name']})")
+
+
 def status(args):
     if not os.path.exists(DB):
         exit(f"{DB} not found")
     with open(DB) as fp:
-        for measurementID in json.load(fp).keys():
-            session = requests.Session()
-            measurement = session.get(
-                f"{URL}/{measurementID}", headers={"Content-Type": "application/json"}
-            ).json()
-            print(measurementID, f"\"{measurement['description']}\"", f"({measurement['status']['name']})")
+        local_data = json.load(fp)
+        for measurementID in local_data.keys():
+            if args.search:
+                for definition in local_data[measurementID]["definitions"]:
+                    if args.search in definition["description"]:
+                        status_aux(measurementID)
+            else:
+                status_aux(measurementID)
 
 
 def fetch_aux(measurement_id, output_directory, verbose):
@@ -264,14 +274,17 @@ def main():
     parser_create.add_argument("-m", "--msm", 
         help="Probe(s) from measurement ID")
 
-    parser_status = subparsers.add_parser('status', help='Status of measurements') 
+    parser_status = subparsers.add_parser('status', 
+        help='Status of measurements') 
+    parser_status.add_argument("-s", "--search",
+        help="Local search in descriptions for measurement(s)")
 
     parser_fetch = subparsers.add_parser('fetch', 
         help='Download result of measurement') 
     parser_fetch.add_argument("-m", "--measurement",
         help="Measurement ID to download results")
     parser_fetch.add_argument("-s", "--search",
-        help="Search in descriptions for measurement(s)")
+        help="Local search in descriptions for measurement(s)")
     parser_fetch.add_argument("-o", "--out", default="results",
         help="Set measurement output directory")
 

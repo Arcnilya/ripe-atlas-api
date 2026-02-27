@@ -42,3 +42,4 @@ python3 main.py parse -i {input_file}
 - [x] Include description in the outfile name
 - [x] python3 main.py fetch "search string"
 - [x] python3 main.py parse (instead of parse.py)
+- [x] python3 main.py status --search
